@@ -1,0 +1,38 @@
+name: Update ETF share snapshots
+
+on:
+  schedule:
+    # 北京时间 16:10 抓当日晚间数据，次日 08:10 用交易所定稿数据再修正一次
+    - cron: '10 8 * * 1-5'
+    - cron: '10 0 * * 2-6'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch Tencent share snapshot
+        run: python tools/update_shares.py
+
+      - name: Commit snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/shares.js
+          if git diff --cached --quiet; then
+            echo "No share snapshot change"
+          else
+            git commit -m "chore: update ETF share snapshot"
+            git push
+          fi

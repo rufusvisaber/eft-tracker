@@ -1,4 +1,4 @@
-/* 汪汪队 ETF 跟踪器 · GitHub Pages 实时版
+/* ETF 成交额跟踪器 · GitHub Pages 实时版
  * 行情：腾讯 qt.gtimg.cn（JSONP，浏览器直连）
  * 基准：腾讯 web.ifzq.gtimg.cn 日 K + 新浪 quotes.sina.cn 5 分钟 K（首访计算并按日缓存）
  * 份额：静态种子 + GitHub Actions 写入的 data/shares.js
@@ -326,7 +326,7 @@
     var l0 = ld.dates[0], l1 = ld.dates[ld.dates.length - 1];
     dn.innerHTML = '<b>估算方法：</b>池内 20 只 ETF「当日场内份额 − 上一交易日份额」加总，正数计申购、负数计赎回；' +
       '区间 ' + b0 + ' ~ ' + b1 + '（' + bd.bars + ' 个交易日）。' +
-      '参考常见口径，日度份额变化均视为汪汪队操作，<b>实际也可能来自其他机构或个人投资者</b>；' +
+      '参考常见口径，日度份额变化均视为池内组合操作，<b>实际也可能来自其他机构或个人投资者</b>；' +
       '2026-11-06 起使用上交所 / 深交所官方每日基金规模数据（见表格脚注②）。<b>日频数据，盘中不实时更新。</b>此为近似推算，非官方披露数据。';
     en.innerHTML = '<b>估算方法：</b>加仓指数 = 100 × 当日池内总份额 ÷ 区间首日（' + l0 + '）总份额，区间 ' + l0 + ' ~ ' + l1 + '。' +
       '高于 100 = 这段区间估算净加仓，低于 100 = 净减仓。<b>不等于真实持仓比例</b>：定期报告已停止披露前十大持有人，' +
@@ -382,10 +382,10 @@
     var level = 'cool', title = '', reason = '';
     if (ratio >= 1.8 && sumNet > 0) {
       level = 'hot'; title = '大概率上班了';
-      reason = '汪汪队池成交额达到历史同时点均值的 ' + fmt(ratio, 2) + ' 倍，且主动净买入 ' + fmt(sumNet, 1) +
-        ' 亿元。放量 + 净买入同向，是典型的护盘量价特征。';
+      reason = '核心池成交额达到历史同时点均值的 ' + fmt(ratio, 2) + ' 倍，且主动净买入 ' + fmt(sumNet, 1) +
+        ' 亿元。放量与买入方向一致，量价配合较明显。';
     } else if (ratio >= 1.3 && sumNet > 0) {
-      level = 'mid'; title = '有护盘迹象';
+      level = 'mid'; title = '有放量迹象';
       reason = '成交额放大到历史同时点均值的 ' + fmt(ratio, 2) + ' 倍，主动净买入 ' + fmt(sumNet, 1) +
         ' 亿元，方向偏买，但力度还不构成强信号。';
     } else if (ratio >= 1.8 && sumNet <= 0) {
@@ -403,7 +403,7 @@
       reason += ' 尾盘半小时成交占全天 ' + fmt(tail * 100, 1) + '%，明显高于 20 日均值 ' + fmt(tailB * 100, 1) + '%。';
     }
     if (wpct < -0.5 && (level === 'hot' || level === 'mid')) {
-      reason += ' 池内规模加权涨跌 ' + fmt(wpct, 2) + '%，下跌日放量更符合护盘场景。';
+      reason += ' 池内规模加权涨跌 ' + fmt(wpct, 2) + '%，下跌日放量更值得关注。';
     }
     if (stale) reason += '（实时通道数据日期不是今天，当前按全天口径对比；连上今日数据后自动切回同时点对齐）';
     else if (st.lunch) reason += '（午间休市，成交额锁定 11:30；对比基准 = 20 日均额 × 历史同时点进度 ' + fmt(done * 100, 1) + '%）';
@@ -439,7 +439,7 @@
     var bars = Math.min(100, v.ratio / 2.5 * 100);
     var newest = S.items[0] && S.items[0].date ? S.items[0].date : S.trade_date;
     document.getElementById('mgrid').innerHTML =
-      card('汪汪队合计成交额', fmt(v.sumAmt, 1) + ' 亿',
+      card('核心池合计成交额', fmt(v.sumAmt, 1) + ' 亿',
         v.st.trading ? '截至 ' + v.st.effHHMM + ' · 已达成全天日均 ' + fmt(v.rawRatio, 2) + '×' :
           '20日均额 ' + fmt(v.sumBase, 1) + ' 亿', '') +
       card('成交额放大倍数', fmt(v.ratio, 2) + '×',
@@ -513,8 +513,8 @@
       if (it.group !== lastGroup) {
         lastGroup = it.group;
         var label = it.group === 'core' ?
-          '汪汪队重点关注 · 2025年报最后一次实名披露（此后停止披露）' :
-          '扩展观察 · 2025年报未见汇金持仓（名单已停止更新）';
+          '核心池 · 2025年报口径（此后停止披露）' :
+          '扩展观察 · 未纳入核心池（名单已停止更新）';
         var cnt = list.filter(function (x) { return x.group === it.group; }).length;
         html += '<tr class="grouphead"><td colspan="10">' + label + '<span class="cnt">' + cnt + ' 只</span></td></tr>';
       }
@@ -525,7 +525,7 @@
       var ratioSub = st.trading ? '<div class="sub muted">已达成日均 ' + fmt(c.raw, 2) + '×</div>' : '';
       html += '<tr>' +
         '<td><div class="name">' + it.name + '<span class="chip ' + it.group + '">' +
-          (it.group === 'core' ? '汪汪队' : '观察') + '</span></div><div class="code num">' + it.code + '</div></td>' +
+          (it.group === 'core' ? '核心' : '观察') + '</span></div><div class="code num">' + it.code + '</div></td>' +
         '<td class="muted">' + it.index + '</td>' +
         '<td class="num">' + fmt(it.mktcap_yi, 1) + '</td>' +
         '<td class="num" style="font-weight:700">' + fmt(it.amount_yi, 2) + amtSub + '</td>' +
@@ -541,7 +541,7 @@
     var core = S.items.filter(function (i) { return i.group === 'core'; });
     var sa = 0, sb = 0, sn = 0;
     core.forEach(function (it) { var c = calcAdj(it, st); sa += it.amount_yi; sb += (it.avg20_yi || 0) * c.done; sn += c.net; });
-    html += '<tr class="total"><td>汪汪队合计</td><td class="muted">' + core.length + ' 只</td><td class="muted">—</td>' +
+    html += '<tr class="total"><td>核心池合计</td><td class="muted">' + core.length + ' 只</td><td class="muted">—</td>' +
       '<td class="num">' + fmt(sa, 2) + (st.trading ? '<div class="sub muted">截至 ' + st.effHHMM + '</div>' : '') + '</td>' +
       '<td class="num hl">' + fmt(sb > 0 ? sa / sb : 0, 2) + '×</td>' +
       '<td class="num ' + cls(sn) + '">' + signed(sn) + '</td>' +
@@ -572,12 +572,12 @@
     var shareDays = Object.keys(S.shares_history).length;
     document.getElementById('meta').innerHTML =
       '数据时间 ' + newest + (liveOK ? (st.lunch ? ' · 通道正常，13:00 继续刷新' : ' · 实时已连接') : '') +
-      '<br>基准来源：' + (S.baselineSource === 'live' ? '腾讯日K + 新浪5分钟K（当日计算）' : '原跟踪器快照（接口不可用时回退）') +
+      '<br>基准来源：' + (S.baselineSource === 'live' ? '腾讯日K + 新浪5分钟K（当日计算）' : '历史快照（接口不可用时回退）') +
       ' · 份额样本 ' + shareDays + ' 日（交易所官方按日数据）' +
       (Object.keys(SHARE_UPDATES).length ? ' · 已载入 ' + Object.keys(SHARE_UPDATES).length + ' 份新增快照' : '');
     document.getElementById('footerSign').textContent =
       '数据来源：腾讯行情（实时）+ 腾讯日K / 新浪5分钟K（基准）+ 上交所 / 深交所官方每日基金规模（份额）· 种子截至 ' +
-      CFG.seed_generated_at + ' · 汇金名单：Wind 2025年报前十大持有人口径（2026-05-01 起停止披露，此后不可验证）' +
+      CFG.seed_generated_at + ' · 名单口径：2025年报前十大持有人（此后停止披露，不可验证）' +
       ' · GitHub Pages 静态托管 · 仅供内部研究，不构成投资建议';
   }
 

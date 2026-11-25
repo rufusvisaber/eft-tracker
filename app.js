@@ -701,8 +701,9 @@
         };
       });
       var today = todayKey();
-      // 剔除尚未收盘的当日 K 线，避免 20 日均额被半天数据污染
-      if (hist.length && hist[hist.length - 1].date === today && marketState().trading) hist.pop();
+      // 一律剔除当日 K 线：盘中 / 开盘前当日数据未定稿，会污染 20 日均额。
+      // 当日完整收盘数据会在下一个交易日重算基准时自然滚入 last20。
+      if (hist.length && hist[hist.length - 1].date === today) hist.pop();
       var last20 = hist.slice(-20);
       var avg = last20.reduce(function (a, x) { return a + x.amount_yi; }, 0) / (last20.length || 1);
       return { code: it.code, hist: hist, avg20_yi: avg };

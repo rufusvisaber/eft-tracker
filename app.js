@@ -572,7 +572,7 @@
     var shareDays = Object.keys(S.shares_history).length;
     document.getElementById('meta').innerHTML =
       '数据时间 ' + newest + (liveOK ? (st.lunch ? ' · 通道正常，13:00 继续刷新' : ' · 实时已连接') : '') +
-      '<br>基准来源：' + (S.baselineSource === 'live' ? '腾讯日K + 新浪5分钟K（当日计算）' : '历史快照（接口不可用时回退）') +
+      '<br>基准来源：' + (S.baselineSource === 'live' ? '腾讯日K + 新浪5分钟K（逐只当日计算）' : '历史快照（接口不可用时回退）') +
       ' · 份额样本 ' + shareDays + ' 日（交易所官方按日数据）' +
       (Object.keys(SHARE_UPDATES).length ? ' · 已载入 ' + Object.keys(SHARE_UPDATES).length + ' 份新增快照' : '');
     document.getElementById('footerSign').textContent =
@@ -710,13 +710,14 @@
     }).catch(function () { return null; });
   }
 
-  function loadShapeScript() {
+  // 每只 ETF 各自拉新浪 5 分钟 K；JSONP 变量名必须唯一，避免并发互相覆盖
+  function loadShapeScript(it, idx) {
     return new Promise(function (resolve) {
-      var varName = 'ETF_SHAPE_DATA';
+      var varName = 'ETF_SHAPE_DATA_' + idx;
       window[varName] = null;
       var s = document.createElement('script');
       s.src = 'https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20' + varName +
-        '=/CN_MarketDataService.getKLineData?symbol=sh510300&scale=5&ma=no&datalen=1000&r=' + Date.now();
+        '=/CN_MarketDataService.getKLineData?symbol=' + it.tcode + '&scale=5&ma=no&datalen=1000&r=' + Date.now();
       var done = false;
       function finish(v) {
         if (done) return;
@@ -725,11 +726,24 @@
         try { if (s.parentNode) s.parentNode.removeChild(s); } catch (e) { }
         resolve(v);
       }
-      var timer = setTimeout(function () { finish(null); }, 10000);
+      var timer = setTimeout(function () { finish(null); }, 15000);
       s.onload = function () { finish(window[varName] || null); };
       s.onerror = function () { finish(null); };
       document.head.appendChild(s);
     });
+  }
+
+  // 限制并发，避免一次性向新浪发 24 个请求被限频
+  function mapLimit(arr, limit, fn) {
+    var results = new Array(arr.length), next = 0;
+    function worker() {
+      if (next >= arr.length) return Promise.resolve();
+      var i = next++;
+      return Promise.resolve(fn(arr[i], i)).then(function (v) { results[i] = v; return worker(); });
+    }
+    var pool = [];
+    for (var k = 0; k < Math.min(limit, arr.length); k++) pool.push(worker());
+    return Promise.all(pool).then(function () { return results; });
   }
 
   function labels() {
@@ -780,42 +794,51 @@
       if (x.avg20_yi) it.avg20_yi = x.avg20_yi;
       if (x.hist && x.hist.length) it.hist = x.hist;
       if (x.shape && x.shape.length) it.shape = x.shape;
+      if (x.tailBase !== null && x.tailBase !== undefined) it.tailBase = x.tailBase;
     });
-    S.tailBase = obj.tailBase;
+    // 尾盘基准按均额加权汇总，供结论里的尾盘加分文案使用
+    var wsum = 0, tsum = 0;
+    obj.items.forEach(function (x) {
+      var w = x.avg20_yi || 0;
+      if (x.tailBase !== null && x.tailBase !== undefined) { tsum += w * x.tailBase; wsum += w; }
+    });
+    S.tailBase = wsum > 0 ? tsum / wsum : (obj.tailBase || null);
     var st = marketState();
-    S.tailCur = (st.trading && st.effHHMM < '14:30') ? null : obj.tailBase;
+    S.tailCur = (st.trading && st.effHHMM < '14:30') ? null : S.tailBase;
     S.baselineSource = 'live';
   }
 
   function loadBaselines() {
-    var key = 'etf_tracker_baseline_' + todayKey();
+    var key = 'etf_tracker_baseline_v2_' + todayKey();
     try {
       var cached = JSON.parse(localStorage.getItem(key) || 'null');
-      if (cached && cached.items && cached.items.length === S.items.length && cached.tailBase) {
+      if (cached && cached.items && cached.items.length === S.items.length &&
+          cached.items.every(function (x) { return x.shape && x.shape.length; })) {
         applyBaseline(cached);
         return Promise.resolve(true);
       }
     } catch (e) { }
 
-    return Promise.all(S.items.map(loadDayK)).then(function (res) {
-      var out = res.filter(Boolean);
-      return loadShapeScript().then(function (rows) {
+    // 每只 ETF 各自拉日 K 与 5 分钟 K，算各自的 20 日均额、进度曲线与尾盘基准
+    return mapLimit(S.items, 8, function (it, idx) {
+      return Promise.all([loadDayK(it), loadShapeScript(it, idx)]).then(function (r) {
+        var day = r[0], rows = r[1];
         var sh = computeShape(rows);
-        var obj = {
-          date: todayKey(),
-          items: out.map(function (x) {
-            var it = byCode[x.code];
-            return { code: x.code, avg20_yi: x.avg20_yi, hist: x.hist, shape: sh ? sh.shape : (it.shape || []) };
-          }),
+        return {
+          code: it.code,
+          avg20_yi: day ? day.avg20_yi : (it.avg20_yi || 0),
+          hist: day && day.hist.length ? day.hist : (it.hist || []),
+          shape: sh ? sh.shape : (it.shape || []),
           tailBase: sh ? sh.tailBase : null
         };
-        if (obj.items.length && obj.tailBase) {
-          applyBaseline(obj);
-          try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) { }
-          return true;
-        }
-        return false;
       });
+    }).then(function (out) {
+      var good = out.filter(function (x) { return x.shape && x.shape.length && x.avg20_yi; });
+      if (good.length < S.items.length * 0.8) return false;
+      var obj = { date: todayKey(), items: out, tailBase: null };
+      applyBaseline(obj);
+      try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) { }
+      return true;
     }).catch(function () { return false; });
   }
 
